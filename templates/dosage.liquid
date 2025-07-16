@@ -1,0 +1,219 @@
+{%- assign parts = "" -%}
+
+{%- comment -%} 1. Nicht unterstützte Felder prüfen → muss in der Engine passieren {%- endcomment -%}
+
+{%- assign freq = dosage.timing.repeat.frequency -%}
+{%- assign freqMax = dosage.timing.repeat.frequencyMax -%}
+{%- assign period = dosage.timing.repeat.period -%}
+{%- assign periodMax = dosage.timing.repeat.periodMax -%}
+{%- assign unit = dosage.timing.repeat.periodUnit -%}
+
+{%- comment -%}
+2. Frequenzausdruck erzeugen
+{%- endcomment -%}
+{%- if unit == 'd' and period == 1 %}
+  {%- if freq == 1 %}{%- assign parts = parts | append: "einmal täglich" -%}
+  {%- elsif freq == 2 %}{%- assign parts = parts | append: "zweimal täglich" -%}
+  {%- elsif freq == 3 %}{%- assign parts = parts | append: "dreimal täglich" -%}
+  {%- elsif freq == 4 %}{%- assign parts = parts | append: "viermal täglich" -%}
+  {%- elsif freqMax %}{%- assign parts = parts | append: freq | append: " — " | append: freqMax | append: " mal täglich" -%}
+  {%- else %}{%- assign parts = parts | append: freq | append: "mal täglich" -%}
+  {%- endif %}
+{%- elsif unit == 'wk' and period == 1 %}
+  {%- if freq == 1 %}{%- assign parts = parts | append: "einmal wöchentlich" -%}
+  {%- elsif freq == 2 %}{%- assign parts = parts | append: "zweimal wöchentlich" -%}
+  {%- elsif freqMax %}{%- assign parts = parts | append: freq | append: " — " | append: freqMax | append: " mal wöchentlich" -%}
+  {%- else %}{%- assign parts = parts | append: freq | append: "mal wöchentlich" -%}
+  {%- endif %}
+{%- elsif freq == 1 and period and unit %}
+  {%- assign parts = parts | append: "alle " | append: period | append: " " -%}
+  {% case unit %}
+    {% when "d" %}{%- assign parts = parts | append: "Tage" -%}
+    {% when "wk" %}{%- assign parts = parts | append: "Wochen" -%}
+    {% when "mo" %}{%- assign parts = parts | append: "Monate" -%}
+    {% when "a" %}{%- assign parts = parts | append: "Jahre" -%}
+    {% else %}{%- assign parts = parts | append: unit -%}
+  {% endcase %}
+{%- elsif freq and period and unit %}
+  {%- assign parts = parts | append: freq | append: " mal pro " | append: period -%}
+  {% case unit %}
+    {% when "d" %}{%- assign parts = parts | append: "Tag" -%}
+    {% when "wk" %}{%- assign parts = parts | append: "Woche" -%}
+    {% when "mo" %}{%- assign parts = parts | append: "Monat" -%}
+    {% when "a" %}{%- assign parts = parts | append: "Jahr" -%}
+    {% else %}{%- assign parts = parts | append: unit -%}
+  {% endcase %}
+{%- endif %}
+
+{%- comment -%}
+3. Wochentage ausgeben
+{%- endcomment -%}
+{%- assign days = dosage.timing.repeat.dayOfWeek -%}
+{%- if days != nil and days.size > 0 %}
+  {%- assign ordered_days = "mon,tue,wed,thu,fri,sat,sun" | split: "," -%}
+  {%- assign day_texts = "" -%}
+  {%- for d in ordered_days %}
+    {%- if days contains d %}
+      {%- case d %}
+        {%- when "mon" %}{%- assign label = "Montag" -%}
+        {%- when "tue" %}{%- assign label = "Dienstag" -%}
+        {%- when "wed" %}{%- assign label = "Mittwoch" -%}
+        {%- when "thu" %}{%- assign label = "Donnerstag" -%}
+        {%- when "fri" %}{%- assign label = "Freitag" -%}
+        {%- when "sat" %}{%- assign label = "Samstag" -%}
+        {%- when "sun" %}{%- assign label = "Sonntag" -%}
+        {%- else %}{%- assign label = d -%}
+      {%- endcase %}
+      {%- if day_texts == "" %}
+        {%- assign day_texts = label -%}
+      {%- else %}
+        {%- assign day_texts = day_texts | append: "||" | append: label -%}
+      {%- endif %}
+    {%- endif %}
+  {%- endfor %}
+  {%- assign day_list = day_texts | split: "||" -%}
+  {%- assign final_days = "" -%}
+  {%- for label in day_list %}
+    {%- if forloop.last and forloop.length > 1 %}
+      {%- assign final_days = final_days | append: " und " | append: label -%}
+    {%- elsif forloop.index0 == 0 %}
+      {%- assign final_days = label -%}
+    {%- else %}
+      {%- assign final_days = final_days | append: ", " | append: label -%}
+    {%- endif %}
+  {%- endfor %}
+  {%- assign parts = parts | append: final_days -%}
+{%- endif %}
+
+
+{%- comment -%}
+4. Wenn weder frequency noch day gesetzt → täglich
+{%- endcomment -%}
+{%- if freq == nil %}
+  {%- if days == nil or days.size == 0 %}
+    {%- assign parts = parts | append: "täglich" -%}
+  {%- endif %}
+{%- endif %}
+
+{%- comment -%}
+5. Dosis (nur erster Eintrag)
+{%- endcomment -%}
+{%- assign dr = dosage.doseAndRate[0] -%}
+{%- if dr.doseQuantity.value and dr.doseQuantity.unit %}
+{%- assign parts = parts | append: " — je " | append: dr.doseQuantity.value  | append: " " | append: dr.doseQuantity.unit -%}
+{%- endif %}
+
+{%- comment -%}
+6. timeOfDay (z. B. "08:00", "20:15" oder "08:00:00")
+{%- endcomment -%}
+{%- assign times = dosage.timing.repeat.timeOfDay -%}
+{%- if times != nil and times.size > 0 %}
+  {%- assign full_order = "" -%}
+  {%- assign sorted_times = "" -%}
+  {%- assign delimiter = "" -%}
+  {%- for h in (0..23) %}
+    {% if h < 10 %}
+      {%- assign hh = "0" | append: h -%}
+    {% else %}
+      {%- assign hh = h -%}
+    {% endif %}
+    {%- for m in (0..59) %}
+      {% if m < 10 %}
+        {%- assign mm = "0" | append: m -%}
+      {% else %}
+        {%- assign mm = m -%}
+      {% endif %}
+      {%- assign hm = hh | append: ":" | append: mm -%}
+      {%- assign full_order = full_order | append: delimiter | append: hm -%}
+      {%- assign delimiter = "||" -%}
+    {%- endfor %}
+  {%- endfor %}
+  {%- assign order = full_order | split: "||" -%} 
+  {%- assign delimiter = "" -%}
+  {%- for o in order %}
+    {%- for t in times %}
+      {%- assign time_parts = t | split: ":" -%}
+      {%- assign h = time_parts | first -%}
+      {%- assign clean_time = t | split: ":" | slice: 0,2 | join: ":" -%}
+      {%- if clean_time == o %}
+        {%- assign sorted_times = sorted_times | append: delimiter | append: clean_time -%}
+        {%- assign delimiter = "||" -%}
+      {%- endif %}
+    {%- endfor %}
+  {%- endfor %}
+  {%- assign sorted_times = sorted_times | split: "||" -%}
+  {%- for t in sorted_times %}
+    {%- if forloop.first %}
+      {%- assign parts = parts | append: " — um " -%}
+    {%- endif %}
+    {%- assign parts = parts | append: t | append: " Uhr" -%}
+    {%- if forloop.last == false %}
+      {%- assign parts = parts | append: ", " -%}
+    {%- endif %}
+  {%- endfor %}
+{%- endif %}
+
+
+{%- comment -%}
+7. "when" (z. B. MORN → morgens)
+{%- endcomment -%}
+{%- assign when = dosage.timing.repeat.when -%}
+{%- if when != nil and when.size > 0 %}
+  {%- assign when_order = "MORN,NOON,AFT,EVE,NIGHT" | split: "," -%}
+  {%- assign when_labels = "" -%}
+  {%- for w in when_order %}
+    {%- if when contains w %}
+      {%- case w %}
+        {%- when "MORN" %}{%- assign label = "morgens" -%}
+        {%- when "NOON" %}{%- assign label = "mittags" -%}
+        {%- when "AFT" %}{%- assign label = "nachmittags" -%}
+        {%- when "EVE" %}{%- assign label = "abends" -%}
+        {%- when "NIGHT" %}{%- assign label = "nachts" -%}
+        {%- else %}{%- assign label = w -%}
+      {%- endcase %}
+      {%- if when_labels == "" %}
+        {%- assign when_labels = label -%}
+      {%- else %}
+        {%- assign when_labels = when_labels | append: "||" | append: label -%}
+      {%- endif %}
+    {%- endif %}
+  {%- endfor %}
+  {%- assign when_list = when_labels | split: "||" -%}
+  {%- assign when_text = "" -%}
+  {%- for label in when_list %}
+    {%- if forloop.last and forloop.length > 1 %}
+      {%- assign when_text = when_text | append: " und " | append: label -%}
+    {%- elsif forloop.index0 == 0 %}
+      {%- assign when_text = label -%}
+    {%- else %}
+      {%- assign when_text = when_text | append: ", " | append: label -%}
+    {%- endif %}
+  {%- endfor %}
+  {%- assign parts = parts | append: " — " | append: when_text -%}
+{%- endif %}
+
+
+{%- comment -%}
+8. Dauer (nur boundsDuration)
+{%- endcomment -%}
+{%- assign dur = dosage.timing.repeat.boundsDuration -%}
+{%- if dur.value and dur.unit %}
+ {%- assign parts = parts | append: " — für " | append: dur.value | append: " " -%}
+ {% case dur.unit %}
+    {%- when "d" %}{%- assign parts = parts | append: "Tage" -%}
+    {%- when "wk" %}{%- assign parts = parts | append: "Wochen" -%}
+    {%- when "mo" %}{%- assign parts = parts | append: "Monate" -%}
+    {%- when "a" %}{%- assign parts = parts | append: "Jahre" -%}
+    {%- else %}{%- assign parts = parts | append: dur.unit -%}
+  {% endcase %}
+{%- endif %}
+
+{%- comment -%}
+9. Freitext
+{%- endcomment -%}
+{%- if dosage.text %}
+ {%- assign parts = parts | append: " — " | append: dosage.text -%}
+
+{%- endif %}
+
+{{ parts }}
